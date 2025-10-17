@@ -22,10 +22,20 @@ export default function Dashboard() {
   }, []);
 
   async function fetchSessions() {
+    const { data: auth } = await supabase.auth.getUser();
+    const teacherId = auth?.user?.id;
+
+    if (!teacherId) {
+      setError("Not authenticated");
+      return;
+    }
+
     const { data, error } = await supabase
       .from("sessions")
       .select("id, session_name, is_active, start_time, end_time")
+      .eq("teacher_id", teacherId) // Add this filter
       .order("created_at", { ascending: false });
+
     if (error) setError(error.message);
     else setSessions(data || []);
   }
@@ -39,15 +49,15 @@ export default function Dashboard() {
       const teacherId = auth?.user?.id; // assuming auth user id maps to teachers.id
       if (!teacherId) throw new Error("Not authenticated");
 
-      const { error: insertError } = await supabase
-        .from("sessions")
-        .insert({
-          teacher_id: teacherId,
-          session_name: sessionName,
-          is_active: false,
-        });
+      const { error: insertError } = await supabase.from("sessions").insert({
+        teacher_id: teacherId,
+        session_name: sessionName,
+        is_active: false,
+      });
       if (insertError) throw insertError;
-      import('react-hot-toast').then(({ default: toast }) => toast.success('Session created'));
+      import("react-hot-toast").then(({ default: toast }) =>
+        toast.success("Session created")
+      );
       setSessionName("");
       await fetchSessions();
     } catch (err) {
@@ -68,7 +78,9 @@ export default function Dashboard() {
       .select("id")
       .single();
     if (error || !updated) {
-      import('react-hot-toast').then(({ default: toast }) => toast.error('Session already started or failed to start'));
+      import("react-hot-toast").then(({ default: toast }) =>
+        toast.error("Session already started or failed to start")
+      );
       return;
     }
 
@@ -80,14 +92,18 @@ export default function Dashboard() {
     const { data: auth } = await supabase.auth.getUser();
     const teacherId = auth?.user?.id;
     if (!teacherId) {
-      import('react-hot-toast').then(({ default: toast }) => toast.error('Not authenticated'));
+      import("react-hot-toast").then(({ default: toast }) =>
+        toast.error("Not authenticated")
+      );
       return;
     }
 
     // Build inserts for those not already in attendance
     const studentIds = assigned?.map((a) => a.student_id) || [];
     if (studentIds.length === 0) {
-      import('react-hot-toast').then(({ default: toast }) => toast.warning('No students assigned to this session'));
+      import("react-hot-toast").then(({ default: toast }) =>
+        toast.warning("No students assigned to this session")
+      );
       await fetchSessions();
       return;
     }
@@ -100,17 +116,28 @@ export default function Dashboard() {
     const existingIds = new Set((existing || []).map((r) => r.student_id));
     const payload = studentIds
       .filter((id) => !existingIds.has(id))
-      .map((sid) => ({ student_id: sid, teacher_id: teacherId, session_id: sessionId, attendance_status: "absent" }));
-    
+      .map((sid) => ({
+        student_id: sid,
+        teacher_id: teacherId,
+        session_id: sessionId,
+        attendance_status: "absent",
+      }));
+
     if (payload.length > 0) {
-      const { error: insertError } = await supabase.from("attendance").insert(payload);
+      const { error: insertError } = await supabase
+        .from("attendance")
+        .insert(payload);
       if (insertError) {
-        import('react-hot-toast').then(({ default: toast }) => toast.error('Failed to create attendance records'));
+        import("react-hot-toast").then(({ default: toast }) =>
+          toast.error("Failed to create attendance records")
+        );
         return;
       }
     }
-    
-    import('react-hot-toast').then(({ default: toast }) => toast.success(`Session started with ${payload.length} attendance records`));
+
+    import("react-hot-toast").then(({ default: toast }) =>
+      toast.success(`Session started with ${payload.length} attendance records`)
+    );
     await fetchSessions();
   }
 
@@ -122,7 +149,9 @@ export default function Dashboard() {
       .eq("id", sessionId)
       .is("end_time", null);
     if (!error) {
-      import('react-hot-toast').then(({ default: toast }) => toast.success('Session stopped'));
+      import("react-hot-toast").then(({ default: toast }) =>
+        toast.success("Session stopped")
+      );
       await fetchSessions();
     }
   }
@@ -154,8 +183,12 @@ export default function Dashboard() {
         <div className="bg-white shadow rounded-lg p-4">
           <h2 className="font-semibold mb-3">Quick Links</h2>
           <div className="space-y-2 text-sm">
-            <Link className="block text-blue-600" to="/students">Manage Students →</Link>
-            <Link className="block text-blue-600" to="/scan">Open Scanner →</Link>
+            <Link className="block text-blue-600" to="/students">
+              Manage Students →
+            </Link>
+            <Link className="block text-blue-600" to="/scan">
+              Open Scanner →
+            </Link>
           </div>
         </div>
       </div>
@@ -166,11 +199,22 @@ export default function Dashboard() {
           {sessions.map((s) => (
             <li key={s.id} className="py-3 flex items-center justify-between">
               <div>
-                <p className="font-medium"><Link className="text-blue-600 hover:underline" to={`/sessions/${s.id}`}>{s.session_name}</Link></p>
+                <p className="font-medium">
+                  <Link
+                    className="text-blue-600 hover:underline"
+                    to={`/sessions/${s.id}`}
+                  >
+                    {s.session_name}
+                  </Link>
+                </p>
                 <p className="text-xs text-gray-500">
                   {s.is_active ? "Active" : "Inactive"}
-                  {s.start_time ? ` • Started: ${new Date(s.start_time).toLocaleString()}` : ""}
-                  {s.end_time ? ` • Ended: ${new Date(s.end_time).toLocaleString()}` : ""}
+                  {s.start_time
+                    ? ` • Started: ${new Date(s.start_time).toLocaleString()}`
+                    : ""}
+                  {s.end_time
+                    ? ` • Ended: ${new Date(s.end_time).toLocaleString()}`
+                    : ""}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -199,5 +243,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
-

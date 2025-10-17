@@ -3,11 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient.js";
 import QRCode from "react-qr-code";
-import emailjs from '@emailjs/browser';
+import emailjs from "@emailjs/browser";
 
-const EMAILJS_SERVICE_ID = 'service_1rlkqj2';
-const EMAILJS_TEMPLATE_ID = 'template_zpyzacw';
-const EMAILJS_PUBLIC_KEY = 'xuxkf_2tin8K6cTiP';
+const EMAILJS_SERVICE_ID = "service_1rlkqj2";
+const EMAILJS_TEMPLATE_ID = "template_zpyzacw";
+const EMAILJS_PUBLIC_KEY = "xuxkf_2tin8K6cTiP";
 
 export default function SessionDetail() {
   const { id } = useParams();
@@ -28,12 +28,41 @@ export default function SessionDetail() {
     setLoading(true);
     setError("");
     try {
-      const [{ data: s }, { data: studs }, { data: joins }] = await Promise.all([
-        supabase.from("sessions").select("id, session_name, is_active, teacher_id").eq("id", id).single(),
-        supabase.from("students").select("id, student_name, student_email, roll_no, qr_code_data"),
-        supabase.from("session_students").select("student_id").eq("session_id", id),
-      ]);
-      setSession(s || null);
+      // Get authenticated user
+      const { data: auth } = await supabase.auth.getUser();
+      const teacherId = auth?.user?.id;
+
+      if (!teacherId) {
+        setError("Not authenticated");
+        setLoading(false);
+        return;
+      }
+
+      const [{ data: s }, { data: studs }, { data: joins }] = await Promise.all(
+        [
+          supabase
+            .from("sessions")
+            .select("id, session_name, is_active, teacher_id")
+            .eq("id", id)
+            .eq("teacher_id", teacherId) // Add this filter to verify ownership
+            .single(),
+          supabase
+            .from("students")
+            .select("id, student_name, student_email, roll_no, qr_code_data"),
+          supabase
+            .from("session_students")
+            .select("student_id")
+            .eq("session_id", id),
+        ]
+      );
+
+      if (!s) {
+        setError("Session not found or access denied");
+        setLoading(false);
+        return;
+      }
+
+      setSession(s);
       setStudents(studs || []);
       setAssignedIds(new Set((joins || []).map((j) => j.student_id)));
     } catch (e) {
@@ -46,18 +75,34 @@ export default function SessionDetail() {
   async function toggleAssign(studentId, checked) {
     try {
       if (checked) {
-        const { error } = await supabase.from("session_students").insert({ session_id: id, student_id: studentId });
+        const { error } = await supabase
+          .from("session_students")
+          .insert({ session_id: id, student_id: studentId });
         if (error) throw error;
         setAssignedIds((prev) => new Set(prev).add(studentId));
-        import('react-hot-toast').then(({ default: toast }) => toast.success('Student assigned to session'));
+        import("react-hot-toast").then(({ default: toast }) =>
+          toast.success("Student assigned to session")
+        );
       } else {
-        const { error } = await supabase.from("session_students").delete().eq("session_id", id).eq("student_id", studentId);
+        const { error } = await supabase
+          .from("session_students")
+          .delete()
+          .eq("session_id", id)
+          .eq("student_id", studentId);
         if (error) throw error;
-        setAssignedIds((prev) => { const n = new Set(prev); n.delete(studentId); return n; });
-        import('react-hot-toast').then(({ default: toast }) => toast.success('Student removed from session'));
+        setAssignedIds((prev) => {
+          const n = new Set(prev);
+          n.delete(studentId);
+          return n;
+        });
+        import("react-hot-toast").then(({ default: toast }) =>
+          toast.success("Student removed from session")
+        );
       }
     } catch (err) {
-      import('react-hot-toast').then(({ default: toast }) => toast.error('Failed to update assignment'));
+      import("react-hot-toast").then(({ default: toast }) =>
+        toast.error("Failed to update assignment")
+      );
     }
   }
 
@@ -65,10 +110,13 @@ export default function SessionDetail() {
 
   const filteredStudents = useMemo(() => {
     if (!searchTerm) return students;
-    return students.filter(student => 
-      student.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.student_email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.roll_no.toLowerCase().includes(searchTerm.toLowerCase())
+    return students.filter(
+      (student) =>
+        student.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        student.student_email
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        student.roll_no.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [students, searchTerm]);
 
@@ -76,21 +124,29 @@ export default function SessionDetail() {
     setSelectAll(checked);
     if (checked) {
       const payload = filteredStudents
-        .filter(st => !assignedIds.has(st.id))
-        .map(st => ({ session_id: id, student_id: st.id }));
-      
+        .filter((st) => !assignedIds.has(st.id))
+        .map((st) => ({ session_id: id, student_id: st.id }));
+
       if (payload.length > 0) {
         try {
-          const { error } = await supabase.from("session_students").insert(payload);
+          const { error } = await supabase
+            .from("session_students")
+            .insert(payload);
           if (error) throw error;
-          setAssignedIds(prev => new Set([...prev, ...payload.map(p => p.student_id)]));
-          import('react-hot-toast').then(({ default: toast }) => toast.success(`Assigned ${payload.length} students`));
+          setAssignedIds(
+            (prev) => new Set([...prev, ...payload.map((p) => p.student_id)])
+          );
+          import("react-hot-toast").then(({ default: toast }) =>
+            toast.success(`Assigned ${payload.length} students`)
+          );
         } catch (err) {
-          import('react-hot-toast').then(({ default: toast }) => toast.error('Failed to assign students'));
+          import("react-hot-toast").then(({ default: toast }) =>
+            toast.error("Failed to assign students")
+          );
         }
       }
     } else {
-      const studentIds = filteredStudents.map(st => st.id);
+      const studentIds = filteredStudents.map((st) => st.id);
       try {
         const { error } = await supabase
           .from("session_students")
@@ -98,14 +154,18 @@ export default function SessionDetail() {
           .eq("session_id", id)
           .in("student_id", studentIds);
         if (error) throw error;
-        setAssignedIds(prev => {
+        setAssignedIds((prev) => {
           const newSet = new Set(prev);
-          studentIds.forEach(id => newSet.delete(id));
+          studentIds.forEach((id) => newSet.delete(id));
           return newSet;
         });
-        import('react-hot-toast').then(({ default: toast }) => toast.success(`Removed ${studentIds.length} students`));
+        import("react-hot-toast").then(({ default: toast }) =>
+          toast.success(`Removed ${studentIds.length} students`)
+        );
       } catch (err) {
-        import('react-hot-toast').then(({ default: toast }) => toast.error('Failed to remove students'));
+        import("react-hot-toast").then(({ default: toast }) =>
+          toast.error("Failed to remove students")
+        );
       }
     }
   };
@@ -119,15 +179,15 @@ export default function SessionDetail() {
         .select("name, email")
         .eq("id", session.teacher_id)
         .single();
-      
+
       if (teacherError) throw teacherError;
 
       // Get assigned students
-      const assignedStudents = students.filter(st => assignedIds.has(st.id));
-      
+      const assignedStudents = students.filter((st) => assignedIds.has(st.id));
+
       if (assignedStudents.length === 0) {
-        import('react-hot-toast').then(({ default: toast }) => 
-          toast.error('No students assigned to this session')
+        import("react-hot-toast").then(({ default: toast }) =>
+          toast.error("No students assigned to this session")
         );
         return;
       }
@@ -137,11 +197,15 @@ export default function SessionDetail() {
 
       // Send emails one by one
       for (const student of assignedStudents) {
-        const qrUrl = `${appOrigin}/scan?student_id=${student.id}&qr=${encodeURIComponent(student.qr_code_data)}&session_id=${id}`;
-        
+        const qrUrl = `${appOrigin}/scan?student_id=${
+          student.id
+        }&qr=${encodeURIComponent(student.qr_code_data)}&session_id=${id}`;
+
         // Use QR API to generate image URL
-        const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrUrl)}`;
-        
+        const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
+          qrUrl
+        )}`;
+
         try {
           await emailjs.send(
             EMAILJS_SERVICE_ID,
@@ -163,18 +227,20 @@ export default function SessionDetail() {
           failCount++;
           console.error(`Failed to send to ${student.student_email}:`, error);
         }
-        
+
         // Small delay between emails to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
-      import('react-hot-toast').then(({ default: toast }) => 
-        toast.success(`Emails sent: ${successCount} successful, ${failCount} failed`)
+      import("react-hot-toast").then(({ default: toast }) =>
+        toast.success(
+          `Emails sent: ${successCount} successful, ${failCount} failed`
+        )
       );
     } catch (e) {
-      console.error('Email error:', e);
-      import('react-hot-toast').then(({ default: toast }) => 
-        toast.error('Failed to send emails: ' + e.message)
+      console.error("Email error:", e);
+      import("react-hot-toast").then(({ default: toast }) =>
+        toast.error("Failed to send emails: " + e.message)
       );
     } finally {
       setSending(false);
@@ -189,12 +255,12 @@ export default function SessionDetail() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{session.session_name}</h1>
-        <button 
-          className="border rounded px-3 py-2 disabled:opacity-50" 
+        <button
+          className="border rounded px-3 py-2 disabled:opacity-50"
           onClick={emailAll}
           disabled={sending}
         >
-          {sending ? 'Sending...' : 'Email QR codes to assigned'}
+          {sending ? "Sending..." : "Email QR codes to assigned"}
         </button>
       </div>
 
@@ -222,14 +288,27 @@ export default function SessionDetail() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredStudents.map((st) => {
             const assigned = assignedIds.has(st.id);
-            const qrUrl = `${appOrigin}/scan?student_id=${st.id}&qr=${encodeURIComponent(st.qr_code_data)}&session_id=${id}`;
+            const qrUrl = `${appOrigin}/scan?student_id=${
+              st.id
+            }&qr=${encodeURIComponent(st.qr_code_data)}&session_id=${id}`;
             return (
-              <label key={st.id} className={`border rounded p-3 block ${assigned ? "ring-1 ring-blue-500" : ""}`}>
+              <label
+                key={st.id}
+                className={`border rounded p-3 block ${
+                  assigned ? "ring-1 ring-blue-500" : ""
+                }`}
+              >
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-medium">{st.student_name}</div>
-                  <input type="checkbox" checked={assigned} onChange={(e) => toggleAssign(st.id, e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={assigned}
+                    onChange={(e) => toggleAssign(st.id, e.target.checked)}
+                  />
                 </div>
-                <div className="text-xs text-gray-500">{st.student_email} • {st.roll_no}</div>
+                <div className="text-xs text-gray-500">
+                  {st.student_email} • {st.roll_no}
+                </div>
                 <div className="mt-3 bg-white p-2 inline-block">
                   <QRCode value={qrUrl} size={112} />
                 </div>
@@ -239,7 +318,9 @@ export default function SessionDetail() {
         </div>
         {filteredStudents.length === 0 && (
           <div className="text-center py-8 text-gray-500">
-            {searchTerm ? `No students found matching "${searchTerm}"` : "No students available"}
+            {searchTerm
+              ? `No students found matching "${searchTerm}"`
+              : "No students available"}
           </div>
         )}
       </div>
