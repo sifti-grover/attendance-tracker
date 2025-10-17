@@ -1,5 +1,14 @@
 # React + Vite
+## Environment Setup
 
+Create an `.env` file in the project root with:
+
+```
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+These variables are used by `src/lib/supabaseClient.js`.
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
